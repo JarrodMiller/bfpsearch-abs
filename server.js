@@ -57,9 +57,9 @@ class BigFinishProvider {
           title: hit.name || hit.title,
           url: `${this.baseUrl}/releases/v/${hit.release_slug || hit.id}`,
           cover: hit.image || null,
-          description: hit.description || null,
+          description: null,
           narrator: contributorNames.join(', ') || null,
-          authors: contributorNames,
+          authors: [],
           duration: hit.duration ? `${hit.duration} mins` : null,
           type: hit.release_edition || 'Audiobook',
           publisher: 'Big Finish Productions',
@@ -67,7 +67,9 @@ class BigFinishProvider {
         };
       });
 
-      return { matches };
+      const fullMetadata = await Promise.all(matches.map(match => this.getFullMetadata(match, query)));
+      
+      return {  matches: fullMetadata };
     } catch (error) {
       console.error('[BigFinish] searchBooks error:', error.message);
       return { matches: [] };
@@ -222,11 +224,24 @@ class BigFinishProvider {
 
       // 1. Written By / Authors
       if (metadata.authors.length === 0) {
-        const writersFound = findMetadataValue(['Written By', 'Written by', 'Author', 'Adapted By', 'Adapted by']);
-        if (writersFound) {
-          metadata.authors = Array.isArray(writersFound)
-            ? writersFound
-            : writersFound.split(/,\s*|\s+and\s+/i).map((w) => w.trim()).filter(Boolean);
+        const writerElements = $('*:contains("Written by"), *:contains("Written By"), *:contains("Author")')
+          .filter((_, el) => $(el).children().length === 0 || $(el).is('dt, strong, b, span'))
+          .first()
+          .closest('div, li, p, section');
+
+        if (writerElements.length > 0) {
+          const writers = writerElements
+            .find('a')
+            .map((_, a) => $(a).text().trim())
+            .get()
+            .filter(Boolean);
+
+          if (writers.length > 0) {
+            metadata.authors = [...new Set(writers)];
+          } else {
+            const raw = writerElements.text().replace(/^.*?written by[:\s]*/i, '').trim();
+            if (raw) metadata.authors = raw.split(/,\s*|\s+and\s+/i).map((w) => w.trim()).filter(Boolean);
+          }
         }
       }
 
